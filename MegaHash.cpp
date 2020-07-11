@@ -69,6 +69,10 @@ Response Hash::store(unsigned char *key, MH_KLEN_T keyLength, unsigned char *con
 					newBucket = (Bucket *)payload;
 					newBucket->init();
 					newBucket->flags = flags;
+										
+					// !! Here the system was loosing the list tail
+					newBucket->next = bucket->next;
+
 					if (lastBucket) lastBucket->next = newBucket;
 					else level->data[ch] = (Tag *)newBucket;
 					
@@ -186,7 +190,7 @@ Response Hash::fetch(unsigned char *key, MH_KLEN_T keyLength) {
 			tag = NULL; // break
 		}
 		else if (tag->type == MH_SIG_BUCKET) {
-			// found bucket list, append
+			// found bucket list
 			bucket = (Bucket *)tag;
 			
 			while (bucket) {
@@ -258,6 +262,7 @@ Response Hash::remove(unsigned char *key, MH_KLEN_T keyLength) {
 					stats->metaSize -= (sizeof(Bucket) + MH_KLEN_SIZE + MH_LEN_SIZE);
 					stats->numKeys--;
 					
+					// Stitch in list tail
 					if (lastBucket) lastBucket->next = bucket->next;
 					else level->data[ch] = bucket->next;
 					
@@ -425,6 +430,19 @@ void Hash::traverseTag(Response *resp, Tag *tag, unsigned char *key, MH_KLEN_T k
 				returnNext[0] = 1;
 				
 				// clear all digest bits so next index ierations begin at zero
+				// ? In case of this being the last element in the list we will
+				//   need to visit the next branch (which we want to start
+				//   travearsing from branch 0.
+				//
+				// A formally more accurate solution will be:
+				// for (int idx = digestIndex; idx < MH_DIGEST_SIZE; idx ++) digest[idx] = 0;
+				// Where we clear only the current level & lower level digest part
+				//
+				// Fortunately the rest of the digest has been cached when
+				// int idx = digest[digestIndex];
+				// assignation has been made in the foor loop.
+				// hence it works.
+
 				((uint64_t *)digest)[0] = 0;
 			}
 			if (bucket) bucket = bucket->next;
